@@ -187,6 +187,19 @@ async function handleSpeechTranscription(transcription, context) {
         }
       }
 
+async function transcribeAndSendToBot(wavFilePath) {
+    const speechService = new SpeechService();
+    const transcribedText = await speechService.speechToTextFromFile(wavFilePath);
+
+    // Send the transcribed text to the bot's /api/messages endpoint
+    const response = await axios.post('http://voxrepobot-f9e6b8a2dva9b4ex.canadacentral-01.azurewebsites.net/api/messages', {
+        text: transcribedText
+    });
+
+    // Return the Foundry response from the bot
+    return response.data;
+}
+
 async function handleCallEvent(reqbody) {
   console.log("Received call event:", JSON.stringify(reqbody, null, 2));
 
@@ -211,8 +224,7 @@ async function handleCallEvent(reqbody) {
         await answerCall(call.id, botCallbackUri, accessToken);
         console.log(`Call ${call.id} answered.`);  
         
-        const speechService = new SpeechService();
-        await speechService.speechToTextFromFile('audio.wav');
+        await transcribeAndSendToBot('audio.wav');
 
         console.log('Transcription from file done');
 

@@ -52,37 +52,51 @@ class SpeechService {
     }
 
     async speechToTextFromFile(filename) {
-        const audioConfig = sdk.AudioConfig.fromWavFileInput(fs.readFileSync(filename));
-        const conversationTranscriber = new sdk.ConversationTranscriber(this.speechConfig, audioConfig);
-        const pushStream = sdk.AudioInputStream.createPushStream();
-        fs.createReadStream(filename).on('data', function (chunk) {
-            pushStream.write(chunk.slice());
-        }).on('end', function () {
-            pushStream.close();
-        });
-        console.log("Transcribing from: " + filename);
-        conversationTranscriber.sessionStarted = function (s, e) {
-            console.log("SessionStarted event");
-            console.log("SessionId:" + e.sessionId);
-        };
-        conversationTranscriber.sessionStopped = function (s, e) {
-            console.log("SessionStopped event");
-            console.log("SessionId:" + e.sessionId);
-            conversationTranscriber.stopTranscribingAsync();
-        };
-        conversationTranscriber.canceled = function (s, e) {
-            console.log("Canceled event");
-            console.log(e.errorDetails);
-            conversationTranscriber.stopTranscribingAsync();
-        };
-        conversationTranscriber.transcribed = function (s, e) {
-            console.log("TRANSCRIBED: Text=" + e.result.text + " Speaker ID=" + e.result.speakerId);
-        };
-        // Start conversation transcription
-        conversationTranscriber.startTranscribingAsync(function () { }, function (err) {
-            console.trace("err - starting transcription: " + err);
-        });
-    }
+    let transcribedText = ''; // Variable to store the transcribed text
+
+    const audioConfig = sdk.AudioConfig.fromWavFileInput(fs.readFileSync(filename));
+    const conversationTranscriber = new sdk.ConversationTranscriber(this.speechConfig, audioConfig);
+    const pushStream = sdk.AudioInputStream.createPushStream();
+    fs.createReadStream(filename).on('data', function (chunk) {
+        pushStream.write(chunk.slice());
+    }).on('end', function () {
+        pushStream.close();
+    });
+
+    console.log("Transcribing from: " + filename);
+
+    conversationTranscriber.sessionStarted = function (s, e) {
+        console.log("SessionStarted event");
+        console.log("SessionId:" + e.sessionId);
+    };
+    conversationTranscriber.sessionStopped = function (s, e) {
+        console.log("SessionStopped event");
+        console.log("SessionId:" + e.sessionId);
+        conversationTranscriber.stopTranscribingAsync();
+    };
+    conversationTranscriber.canceled = function (s, e) {
+        console.log("Canceled event");
+        console.log(e.errorDetails);
+        conversationTranscriber.stopTranscribingAsync();
+    };
+    conversationTranscriber.transcribed = function (s, e) {
+        console.log("TRANSCRIBED: Text=" + e.result.text + " Speaker ID=" + e.result.speakerId);
+        transcribedText += e.result.text + ' ';
+    };
+
+    // Start conversation transcription
+    await new Promise((resolve, reject) => {
+        conversationTranscriber.startTranscribingAsync(
+            () => resolve(),
+            (err) => {
+                console.trace("err - starting transcription: " + err);
+                reject(err);
+            }
+        );
+    });
+
+    return transcribedText.trim(); // Return the transcribed text
+}
 
     /**
      * Feed audio chunk into the push stream.
