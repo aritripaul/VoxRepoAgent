@@ -193,6 +193,7 @@ async function transcribeAndSendToBot(wavFilePath) {
 
     // Send the transcribed text to the bot's /api/messages endpoint
     const response = await axios.post('http://voxrepobot-f9e6b8a2dva9b4ex.canadacentral-01.azurewebsites.net/api/messages', {
+        type: "message",
         text: transcribedText
     });
 

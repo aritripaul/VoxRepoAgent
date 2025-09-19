@@ -48,46 +48,7 @@ expressApp.post("/api/messages", async (req, res) => {
 });
 
 expressApp.post("/calling/callback", async (req, res) => {
-  try {
-    const body = req.body || {};
-    console.log('CALLBACK headers:', req.headers);
-    console.log('CALLBACK body keys:', Object.keys(body));
-    console.log('CALLBACK body sample:', JSON.stringify(body.value?.[0] || body, null, 2));
- 
-    // respond quickly so Graph doesn't retry
-    res.status(202).send();
- 
-    // Process each notification in the batch
-    const notifications = body.value || [];
-    for (const ev of notifications) {
-      // always log the resource path to see event type
-      console.log('Notification resource:', ev.resource, 'changeType:', ev.changeType);
- 
-      // 1) If resource indicates media, try to parse payload
-      if (ev.resource && ev.resource.toLowerCase().includes('/media')) {
-        console.log('Media notification detected:', ev.resource);
-        await tryExtractAndFeed(ev.resourceData || ev);
-        continue;
-      }
- 
-      // 2) Some notifications carry media under resourceData.media or resourceData.mediaStreams or resourceData.content
-      if (ev.resourceData && (ev.resourceData.media || ev.resourceData.mediaStreams || ev.resourceData.content || ev.resourceData.data)) {
-        console.log('Possible inlined media in resourceData');
-        await tryExtractAndFeed(ev.resourceData);
-        continue;
-      }
- 
-      // 3) Some implementations deliver media in a sub-object (ev.media, ev.body, ev.data)
-      if (ev.media || ev.body || ev.data) {
-        console.log('Possible media under top-level media/body/data');
-        await tryExtractAndFeed(ev);
-        continue;
-      }
- 
-      // otherwise this notification is likely lifecycle (created/established/terminated)
-      console.log('Non-media notification (lifecycle):', ev.changeType, ev.resource);
-    }
-
+  try {    
     await adapter.process(req, res, async (context) => {
     console.log('Hi, I am inside adapter.process');
     await handleCallEvent(req.body, context);
@@ -100,81 +61,120 @@ expressApp.post("/calling/callback", async (req, res) => {
   }
 });
 
-async function tryExtractAndFeed(obj) {
-  // utility to normalize and feed a base64/string/ArrayBuffer/Buffer
-  function feedIfFound(payload, sourceDesc) {
-    if (!payload) return false;
-    try {
-      // if it's an array of packets, process each entry
-      if (Array.isArray(payload)) {
-        payload.forEach(p => feedIfFound(p, sourceDesc + '[]'));
-        return true;
-      }
+// async function tryExtractAndFeed(obj) {
+//   // utility to normalize and feed a base64/string/ArrayBuffer/Buffer
+//   function feedIfFound(payload, sourceDesc) {
+//     if (!payload) return false;
+//     try {
+//       // if it's an array of packets, process each entry
+//       if (Array.isArray(payload)) {
+//         payload.forEach(p => feedIfFound(p, sourceDesc + '[]'));
+//         return true;
+//       }
  
-      // if object has .data or .content or .body - these are likely base64
-      const possibleFields = ['data', 'content', 'body', 'audio', 'chunk', 'payload'];
-      for (const f of possibleFields) {
-        if (payload[f]) {
-          let chunk = payload[f];
-          // if chunk is base64 string
-          if (typeof chunk === 'string') {
-            const buf = Buffer.from(chunk, 'base64');
-            console.log(`Feeding audio chunk from ${sourceDesc}.${f} (bytes=${buf.length})`);
-            speechService.feedAudioChunk(buf);
-            return true;
-          }
-          // ArrayBuffer / typed array / Buffer
-          if (chunk instanceof ArrayBuffer || Buffer.isBuffer(chunk) || (chunk.buffer && chunk.buffer instanceof ArrayBuffer)) {
-            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk.buffer || chunk);
-            console.log(`Feeding audio chunk from ${sourceDesc}.${f} (bytes=${buf.length})`);
-            speechService.feedAudioChunk(buf);
-            return true;
-          }
-        }
-      }
+//       // if object has .data or .content or .body - these are likely base64
+//       const possibleFields = ['data', 'content', 'body', 'audio', 'chunk', 'payload'];
+//       for (const f of possibleFields) {
+//         if (payload[f]) {
+//           let chunk = payload[f];
+//           // if chunk is base64 string
+//           if (typeof chunk === 'string') {
+//             const buf = Buffer.from(chunk, 'base64');
+//             console.log(`Feeding audio chunk from ${sourceDesc}.${f} (bytes=${buf.length})`);
+//             speechService.feedAudioChunk(buf);
+//             return true;
+//           }
+//           // ArrayBuffer / typed array / Buffer
+//           if (chunk instanceof ArrayBuffer || Buffer.isBuffer(chunk) || (chunk.buffer && chunk.buffer instanceof ArrayBuffer)) {
+//             const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk.buffer || chunk);
+//             console.log(`Feeding audio chunk from ${sourceDesc}.${f} (bytes=${buf.length})`);
+//             speechService.feedAudioChunk(buf);
+//             return true;
+//           }
+//         }
+//       }
  
-      // Sometimes the object itself is a base64 string
-      if (typeof payload === 'string') {
-        const buf = Buffer.from(payload, 'base64');
-        console.log(`Feeding audio chunk from ${sourceDesc} (bytes=${buf.length})`);
-        speechService.feedAudioChunk(buf);
-        return true;
-      }
+//       // Sometimes the object itself is a base64 string
+//       if (typeof payload === 'string') {
+//         const buf = Buffer.from(payload, 'base64');
+//         console.log(`Feeding audio chunk from ${sourceDesc} (bytes=${buf.length})`);
+//         speechService.feedAudioChunk(buf);
+//         return true;
+//       }
  
-      // Some payloads carry `mediaChunks` or `mediaPackets`
-      if (payload.mediaChunks || payload.mediaPackets) {
-        const arr = payload.mediaChunks || payload.mediaPackets;
-        return feedIfFound(arr, sourceDesc + '.mediaChunks');
-      }
+//       // Some payloads carry `mediaChunks` or `mediaPackets`
+//       if (payload.mediaChunks || payload.mediaPackets) {
+//         const arr = payload.mediaChunks || payload.mediaPackets;
+//         return feedIfFound(arr, sourceDesc + '.mediaChunks');
+//       }
  
-      // If payload contains mediaStreams array (metadata only) check if frames are embedded inside
-      if (payload.mediaStreams && Array.isArray(payload.mediaStreams)) {
-        // metadata; nothing to feed directly, but sometimes sibling fields contain data
-        console.log('mediaStreams metadata found:', payload.mediaStreams.map(s => s.label).join(', '));
-      }
+//       // If payload contains mediaStreams array (metadata only) check if frames are embedded inside
+//       if (payload.mediaStreams && Array.isArray(payload.mediaStreams)) {
+//         // metadata; nothing to feed directly, but sometimes sibling fields contain data
+//         console.log('mediaStreams metadata found:', payload.mediaStreams.map(s => s.label).join(', '));
+//       }
  
-      // No recognized payload
-      return false;
-    } catch (ex) {
-      console.error('Error extracting/feeding chunk', ex);
-      return false;
-    }
-  }
+//       // No recognized payload
+//       return false;
+//     } catch (ex) {
+//       console.error('Error extracting/feeding chunk', ex);
+//       return false;
+//     }
+//   }
  
-  // Try several likely places in descending order
-  if (feedIfFound(obj, 'root')) return;
-  if (obj.resourceData && feedIfFound(obj.resourceData, 'resourceData')) return;
-  if (obj.media && feedIfFound(obj.media, 'media')) return;
-  if (obj.body && feedIfFound(obj.body, 'body')) return;
-  if (obj.data && feedIfFound(obj.data, 'data')) return;
+//   // Try several likely places in descending order
+//   if (feedIfFound(obj, 'root')) return;
+//   if (obj.resourceData && feedIfFound(obj.resourceData, 'resourceData')) return;
+//   if (obj.media && feedIfFound(obj.media, 'media')) return;
+//   if (obj.body && feedIfFound(obj.body, 'body')) return;
+//   if (obj.data && feedIfFound(obj.data, 'data')) return;
  
-  // If nothing matched, log the object for inspection
-  console.log('No media payload extracted from event; full object for debugging:', JSON.stringify(obj, null, 2));
-}
+//   // If nothing matched, log the object for inspection
+//   console.log('No media payload extracted from event; full object for debugging:', JSON.stringify(obj, null, 2));
+// }
 
-// Gracefully shutdown HTTP server
-["exit", "uncaughtException", "SIGINT", "SIGTERM", "SIGUSR1", "SIGUSR2"].forEach((event) => {
-  process.on(event, () => {
-    server.close();
-  });
-});
+// // Gracefully shutdown HTTP server
+// ["exit", "uncaughtException", "SIGINT", "SIGTERM", "SIGUSR1", "SIGUSR2"].forEach((event) => {
+//   process.on(event, () => {
+//     server.close();
+//   });
+// });
+
+// const body = req.body || {};
+//     console.log('CALLBACK headers:', req.headers);
+//     console.log('CALLBACK body keys:', Object.keys(body));
+//     console.log('CALLBACK body sample:', JSON.stringify(body.value?.[0] || body, null, 2));
+ 
+//     // respond quickly so Graph doesn't retry
+//     res.status(202).send();
+ 
+//     // Process each notification in the batch
+//     const notifications = body.value || [];
+//     for (const ev of notifications) {
+//       // always log the resource path to see event type
+//       console.log('Notification resource:', ev.resource, 'changeType:', ev.changeType);
+ 
+//       // 1) If resource indicates media, try to parse payload
+//       if (ev.resource && ev.resource.toLowerCase().includes('/media')) {
+//         console.log('Media notification detected:', ev.resource);
+//         await tryExtractAndFeed(ev.resourceData || ev);
+//         continue;
+//       }
+ 
+//       // 2) Some notifications carry media under resourceData.media or resourceData.mediaStreams or resourceData.content
+//       if (ev.resourceData && (ev.resourceData.media || ev.resourceData.mediaStreams || ev.resourceData.content || ev.resourceData.data)) {
+//         console.log('Possible inlined media in resourceData');
+//         await tryExtractAndFeed(ev.resourceData);
+//         continue;
+//       }
+ 
+//       // 3) Some implementations deliver media in a sub-object (ev.media, ev.body, ev.data)
+//       if (ev.media || ev.body || ev.data) {
+//         console.log('Possible media under top-level media/body/data');
+//         await tryExtractAndFeed(ev);
+//         continue;
+//       }
+ 
+//       // otherwise this notification is likely lifecycle (created/established/terminated)
+//       console.log('Non-media notification (lifecycle):', ev.changeType, ev.resource);
+//     }
