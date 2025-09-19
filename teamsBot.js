@@ -154,51 +154,22 @@ async function answerCall(callId, callbackUri, accessToken) {
   console.log(`Answered call ${callId}`);
 }
 
-async function handleSpeechTranscription(transcription, context) {
-        try {
-            if (!transcription || transcription.trim().length === 0) {
-                return;
-            }
-
-            this.logger.info('Processing speech transcription', { 
-                transcription: transcription,
-                userId: context.activity.from.id 
-            });
-
-            // Process the transcription as if it were a text message
-            const mockActivity = {
-                ...context.activity,
-                text: transcription,
-                type: 'message'
-            };
-
-            const mockContext = {
-                ...context,
-                activity: mockActivity
-            };
-
-            await this.handleTextMessage(mockContext);
-            
-        } catch (error) {
-            this.logger.error('Error handling speech transcription', { 
-                error: error.message,
-                transcription: transcription 
-            });
-        }
-      }
-
 async function transcribeAndSendToBot(wavFilePath) {
-    const speechService = new SpeechService();
-    const transcribedText = await speechService.speechToTextFromFile(wavFilePath);
+  const speechService = new SpeechService();
+  const transcribedText = await speechService.speechToTextFromFile(wavFilePath);
 
-    // Send the transcribed text to the bot's /api/messages endpoint
-    const response = await axios.post('http://voxrepobot-f9e6b8a2dva9b4ex.canadacentral-01.azurewebsites.net/api/messages', {
-        type: "message",
-        text: transcribedText
-    });
+  // Send the transcribed text to the bot's /api/messages endpoint as a full activity
+  const response = await axios.post('http://voxrepobot-f9e6b8a2dva9b4ex.canadacentral-01.azurewebsites.net/api/messages', {
+    type: "message",
+    text: transcribedText,
+    from: { id: "user1" },
+    conversation: { id: "conv1" },
+    recipient: { id: "bot" },
+    channelId: "msteams"
+  });
 
-    // Return the Foundry response from the bot
-    return response.data;
+  // Return the Foundry response from the bot
+  return response.data;
 }
 
 async function handleCallEvent(reqbody, context) {
