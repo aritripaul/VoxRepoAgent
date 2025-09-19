@@ -1,4 +1,6 @@
 const sdk = require('microsoft-cognitiveservices-speech-sdk');
+const fs = require('fs');
+const path = require('path');
 
 class SpeechService {
     constructor() {
@@ -49,139 +51,37 @@ class SpeechService {
         }
     }
 
-    /**
-     * One-shot speech to text (for short audio buffer/file).
-     * audioBuffer should be a Buffer (or ArrayBuffer / base64 string) containing raw PCM
-     * matching the Speech Service expectations (e.g. 16 kHz 16-bit PCM).
-     */
-    async speechToText(audioBuffer) {
-        return new Promise((resolve, reject) => {
-            try {
-                if (process.env.NODE_ENV === 'test') {
-                    setTimeout(() => resolve('Hello world'), 10);
-                    return;
-                }
-
-                if (!this.speechConfig) {
-                    reject(new Error('Speech configuration not initialized'));
-                    return;
-                }
-
-                // Normalize input to Buffer
-                let buf = audioBuffer;
-                if (typeof audioBuffer === 'string') {
-                    buf = Buffer.from(audioBuffer, 'base64');
-                } else if (audioBuffer instanceof ArrayBuffer) {
-                    buf = Buffer.from(audioBuffer);
-                }
-
-                if (!Buffer.isBuffer(buf)) {
-                    reject(new Error('audioBuffer must be a Buffer, ArrayBuffer or base64 string'));
-                    return;
-                }
-
-                const pushStream = sdk.AudioInputStream.createPushStream();
-                pushStream.write(buf);
-                pushStream.close();
-
-                const audioConfig = sdk.AudioConfig.fromStreamInput(pushStream);
-                const recognizer = new sdk.SpeechRecognizer(this.speechConfig, audioConfig);
-
-                recognizer.recognizeOnceAsync(
-                    (result) => {
-                        try { recognizer.close(); } catch (e) {}
-                        if (result && result.reason === sdk.ResultReason.RecognizedSpeech) {
-                            resolve(result.text);
-                        } else {
-                            resolve(''); // no match or empty
-                        }
-                    },
-                    (error) => {
-                        try { recognizer.close(); } catch (e) {}
-                        reject(error);
-                    }
-                );
-
-            } catch (error) {
-                console.error('Error in speechToText', { error: error.message });
-                reject(error);
-            }
+    async speechToTextFromFile(filePath) {
+        const audioConfig = sdk.AudioConfig.fromWavFileInput(fs.readFileSync(filePath));
+        const conversationTranscriber = new sdk.ConversationTranscriber(this.speechConfig, audioConfig);
+        const pushStream = sdk.AudioInputStream.createPushStream();
+        fs.createReadStream(filePath).on('data', function (chunk) {
+            pushStream.write(chunk.slice());
+        }).on('end', function () {
+            pushStream.close();
         });
-    }
-
-    /**
-     * Continuous recognition for streaming audio (e.g., Teams bot).
-     * Use feedAudioChunk() to push PCM chunks (Buffer / base64 / ArrayBuffer).
-     */
-    async startContinuousRecognition(onRecognizedCallback, onErrorCallback = null) {
-        try {
-            if (this.isRecognizing) {
-                console.warn('Continuous recognition is already running');
-                return;
-            }
-            if (!this.speechConfig) {
-                throw new Error('Speech configuration not initialized');
-            }
-
-            // Create push stream to accept external audio chunks
-            this.pushStream = sdk.AudioInputStream.createPushStream();
-            const audioConfig = sdk.AudioConfig.fromStreamInput(this.pushStream);
-
-            this.recognizer = new sdk.SpeechRecognizer(this.speechConfig, audioConfig);
-
-            // Interim results
-            this.recognizer.recognizing = (s, e) => {
-                if (e && e.result && e.result.text) {
-                    console.log('Interim recognizing', { text: e.result.text });
-                }
-            };
-
-            // Finalized results
-            this.recognizer.recognized = (s, e) => {
-                if (e && e.result && e.result.reason === sdk.ResultReason.RecognizedSpeech) {
-                    console.log('Continuous speech recognized', { text: e.result.text });
-                    if (onRecognizedCallback) onRecognizedCallback(e.result.text);
-                } else if (e && e.result && e.result.reason === sdk.ResultReason.NoMatch) {
-                    console.warn('No match for audio chunk');
-                }
-            };
-
-            // Canceled (errors etc.)
-            this.recognizer.canceled = (s, e) => {
-                console.error('Continuous recognition canceled', {
-                    reason: e.reason,
-                    errorDetails: e.errorDetails
-                });
-                this.isRecognizing = false;
-
-                // close resources
-                try { if (this.recognizer) { this.recognizer.close(); } } catch (ex) {}
-                try { if (this.pushStream) { this.pushStream.close(); this.pushStream = null; } } catch (ex) {}
-
-                if (onErrorCallback) onErrorCallback(new Error(`Recognition canceled: ${e.errorDetails || e.reason}`));
-            };
-
-            this.recognizer.sessionStopped = () => {
-                console.log('Continuous recognition session stopped');
-                this.isRecognizing = false;
-                try { if (this.pushStream) { this.pushStream.close(); this.pushStream = null; } } catch (ex) {}
-            };
-
-            this.recognizer.startContinuousRecognitionAsync(
-                () => {
-                    console.log('Continuous speech recognition started');
-                    this.isRecognizing = true;
-                },
-                (error) => {
-                    console.error('Failed to start continuous recognition', { error: (error && error.message) || error });
-                    if (onErrorCallback) onErrorCallback(error);
-                }
-            );
-
-        } catch (error) {
-            console.error('Error starting continuous recognition', { error: error.message });
-            throw error;
-        }
+        console.log("Transcribing from: " + filename);
+        conversationTranscriber.sessionStarted = function (s, e) {
+            console.log("SessionStarted event");
+            console.log("SessionId:" + e.sessionId);
+        };
+        conversationTranscriber.sessionStopped = function (s, e) {
+            console.log("SessionStopped event");
+            console.log("SessionId:" + e.sessionId);
+            conversationTranscriber.stopTranscribingAsync();
+        };
+        conversationTranscriber.canceled = function (s, e) {
+            console.log("Canceled event");
+            console.log(e.errorDetails);
+            conversationTranscriber.stopTranscribingAsync();
+        };
+        conversationTranscriber.transcribed = function (s, e) {
+            console.log("TRANSCRIBED: Text=" + e.result.text + " Speaker ID=" + e.result.speakerId);
+        };
+        // Start conversation transcription
+        conversationTranscriber.startTranscribingAsync(function () { }, function (err) {
+            console.trace("err - starting transcription: " + err);
+        });
     }
 
     /**

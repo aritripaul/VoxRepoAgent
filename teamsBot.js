@@ -209,44 +209,35 @@ async function handleCallEvent(reqbody) {
         // Answer the incoming call
         console.log(`Incoming call detected with id: ${call.id}`);
         await answerCall(call.id, botCallbackUri, accessToken);
-        console.log(`Call ${call.id} answered.`);
-            
-        const audioFilePath = path.resolve(__dirname, 'audio.wav');
- 
-        if (!fs.existsSync(audioFilePath)) {
-          console.error('audio.wav file not found!');
-          return;
+        console.log(`Call ${call.id} answered.`);  
+        
+        const speechService = new SpeechService();
+        await speechService.speechToTextFromFile('audio.wav');
+
+        console.log('Transcription from file done');
+
+        if (context) {
+          await context.sendActivity(`Transcription: ${text}`);
         }
     
-        const audioBuffer = fs.readFileSync(audioFilePath);
-
-        const speechService = new SpeechService();
-    const text = await speechService.speechToText(audioBuffer);
- 
-    console.log('Transcription result:', text);
- 
-    if (context) {
-      await context.sendActivity(`Transcription: ${text}`);
-    }
- 
-        context.sendActivity(text);
-          await speechService.startContinuousRecognition(
-            async (transcription) => {
-              console.log("Recognized speech:", transcription);
-              // You can send the transcription to Teams, save it, or process it further here
-              if (context) {
-                await context.sendActivity(`Transcription: ${transcription}`);
-              }
-            },
-            (error) => {
-              console.error("Speech recognition error:", error);
-            }
-          );
-        
-      }
-      else {
-        console.log(`Unhandled call state: ${call.state}, changeType: ${changeType}`);
-      }
+            context.sendActivity(text);
+              await speechService.startContinuousRecognition(
+                async (transcription) => {
+                  console.log("Recognized speech:", transcription);
+                  // You can send the transcription to Teams, save it, or process it further here
+                  if (context) {
+                    await context.sendActivity(`Transcription: ${transcription}`);
+                  }
+                },
+                (error) => {
+                  console.error("Speech recognition error:", error);
+                }
+              );
+            
+          }
+          else {
+            console.log(`Unhandled call state: ${call.state}, changeType: ${changeType}`);
+          }
       } catch (error) {
       console.error("Error handling call:", error.response?.data || error.message);
     }
