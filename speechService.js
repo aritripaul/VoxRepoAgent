@@ -51,11 +51,11 @@ class SpeechService {
         }
     }
 
-    async speechToTextFromFile(filePath) {
-        const audioConfig = sdk.AudioConfig.fromWavFileInput(fs.readFileSync(filePath));
+    async speechToTextFromFile(filename) {
+        const audioConfig = sdk.AudioConfig.fromWavFileInput(fs.readFileSync(filename));
         const conversationTranscriber = new sdk.ConversationTranscriber(this.speechConfig, audioConfig);
         const pushStream = sdk.AudioInputStream.createPushStream();
-        fs.createReadStream(filePath).on('data', function (chunk) {
+        fs.createReadStream(filename).on('data', function (chunk) {
             pushStream.write(chunk.slice());
         }).on('end', function () {
             pushStream.close();
