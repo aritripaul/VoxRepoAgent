@@ -87,7 +87,12 @@ expressApp.post("/calling/callback", async (req, res) => {
       // otherwise this notification is likely lifecycle (created/established/terminated)
       console.log('Non-media notification (lifecycle):', ev.changeType, ev.resource);
     }
-    await handleCallEvent(req.body);
+
+    await adapter.process(req, res, async (context) => {
+    console.log('Hi, I am inside adapter.process');
+    await handleCallEvent(req.body, context);
+  });   
+    
     //res.sendStatus(200);
   } catch (error) {
     console.error("Error handling call event:", error);

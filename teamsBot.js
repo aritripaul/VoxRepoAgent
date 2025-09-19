@@ -200,7 +200,7 @@ async function transcribeAndSendToBot(wavFilePath) {
     return response.data;
 }
 
-async function handleCallEvent(reqbody) {
+async function handleCallEvent(reqbody, context) {
   console.log("Received call event:", JSON.stringify(reqbody, null, 2));
 
   if (reqbody.value && reqbody.value.length > 0) {
@@ -224,7 +224,10 @@ async function handleCallEvent(reqbody) {
         await answerCall(call.id, botCallbackUri, accessToken);
         console.log(`Call ${call.id} answered.`);  
         
-        await transcribeAndSendToBot('audio.wav');
+        const foundryResponse = await transcribeAndSendToBot('audio.wav');
+        if (context) {
+          await context.sendActivity(foundryResponse);
+        }
 
         console.log('Transcription from file done');
 
